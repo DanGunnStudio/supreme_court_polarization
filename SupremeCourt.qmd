@@ -1,0 +1,7 @@
+---
+title: "supreme_court"
+format: html
+editor: visual
+---
+
+# Supreme Court Polarization
