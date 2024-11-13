@@ -5,3 +5,95 @@ editor: visual
 ---
 
 # Supreme Court Polarization
+
+### Goal: To explore whether collaboration is decreasing within the Court due to partisanship. 
+
+```{r}
+library(tidyverse)
+library(ggiraph)
+```
+
+Getting Data from the Supreme Court Database at Washington University Law
+
+```{r}
+
+zip_url <- "http://scdb.wustl.edu/_brickFiles/2024_01/SCDB_2024_01_justiceCentered_Citation.Rdata.zip"
+
+zip_destfile <- "SCDB_2024_01_justiceCentered_Citation.Rdata.zip"
+
+download.file(zip_url, zip_destfile, mode = "wb")
+
+unzip(zip_destfile, exdir = ".")
+
+load("SCDB_2024_01_justiceCentered_Citation.Rdata")
+
+```
+
+I might try this without knowledge of their party affiliations AND independently of it as well.
+
+### Q1: How do I track who votes together? 
+
+What are the groupings? Find votes where they vote the same way, and see how often they appear on the same side together.
+
+### Q2: Is the mean concurring vote total changing over years? 6-3
+
+```{r}
+##making a subset
+cases_selected <- SCDB_2024_01_justiceCentered_Citation |>
+  select(caseId,
+         dateDecision,
+         majVotes,
+         minVotes,
+         justice,
+         justiceName,
+         vote,
+         direction,
+         majority) |>
+  mutate( year = year(dateDecision),
+          agreement_percentage = if_else(
+            minVotes == 0,
+            100,  # Set to 100% if unanimous
+            (majVotes / (majVotes + minVotes)) * 100 
+            )
+          )
+
+
+```
+
+```{r}
+cases_selected |> 
+  group_by(year)|>
+  summarize(avg_agree_perc = mean(agreement_percentage))|>
+  ggplot(aes(x=year, y = avg_agree_perc))+
+  geom_point()+
+  geom_line()+
+  geom_smooth(method = "loess", span = 0.5, 
+              method.args = list(degree = 2, #linear or quadratic
+                                 family = "symmetric"), #symmetric or gaussian
+              na.rm = TRUE)+  
+  labs(title = "Supreme Court Agreement Percentage")+
+  theme_minimal()
+
+```
+
+Conclusion: There has been a slight upward trajectory to greater agreement in the court. This could just represent partisan sorting or partisan majorities in the modern era. What I need to measure is ideological sorting. Has that gotten worse or better?
+
+### Q3 Does the direction variable actually track changes in the court?
+
+```{r}
+cases_selected |>
+  group_by(year)|>
+  summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = avg_direction)) +
+  geom_line()+
+  geom_point()+
+  geom_smooth(method = "loess", span = 0.5, 
+              method.args = list(degree = 2, #linear or quadratic
+                                 family = "symmetric"), #symmetric or gaussian
+              na.rm = TRUE)+ 
+  theme_minimal()
+```
+
+1 = Conservative
+
+2 = Liberal
