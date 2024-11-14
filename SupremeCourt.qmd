@@ -11,6 +11,7 @@ editor: visual
 ```{r}
 library(tidyverse)
 library(ggiraph)
+library(patchwork)
 ```
 
 Getting Data from the Supreme Court Database at Washington University Law
@@ -84,16 +85,63 @@ Conclusion: There has been a slight upward trajectory to greater agreement in th
 cases_selected |>
   group_by(year)|>
   summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
-  ggplot(aes(x = year, y = avg_direction)) +
-  geom_line()+
+  ggplot(aes(x = year, y = avg_direction, color = avg_direction)) +
+  geom_line(size = 1.25)+
   geom_point()+
+  scale_color_gradient2(
+    low = "red",    # Color for low values
+    mid = "gray",   # Color for midpoint
+    high = "darkblue",    # Color for high values
+    midpoint = 1.5     # Set the midpoint value for the diverging scale
+  ) +
   geom_smooth(method = "loess", span = 0.5, 
               method.args = list(degree = 2, #linear or quadratic
                                  family = "symmetric"), #symmetric or gaussian
               na.rm = TRUE)+ 
+  labs(title = "Ideological Swing on the Court",
+       x= NULL,
+       y = "Average Direction")+
   theme_minimal()
 ```
 
 1 = Conservative
 
 2 = Liberal
+
+Interesting result. This would be the total votes in a year that are considered to be conservative vs. liberal. This is about the political content of the vote, not the partisanship of the justices or the willingness of them to form different coalitions.
+
+```{r}
+
+endpoints <- cases_selected %>%
+  group_by(justiceName) %>%
+  filter(year == min(year) | year == max(year))
+
+cases_selected |> 
+  arrange(year)|>
+  group_by(justice)|>
+  mutate(justice_avg_direction = mean(direction, na.rm = TRUE))|>
+  ggplot(aes(x=year, y = as.factor(justice)))+ 
+  geom_line(aes(color = justice_avg_direction),
+                size = 2,
+            lineend = "round")+
+  geom_text(
+    data = endpoints,
+    aes(label = year),
+    vjust = -0.5  # Adjust to move label slightly above the point
+  ) +
+  scale_y_discrete(
+    breaks = cases_selected$justice,
+    labels = cases_selected$justiceName
+  ) +
+  scale_color_gradient2(
+    low = "red",    # Color for low values
+    mid = "gray",   # Color for midpoint
+    high = "darkblue",    # Color for high values
+    midpoint = 1.5     # Set the midpoint value for the diverging scale
+  ) +
+  labs(title = "Ideological Shift and Justice Terms", 
+       y = "Justice", 
+       x = NULL, 
+       legend = "Ideological Average")+
+  theme_minimal()
+```
