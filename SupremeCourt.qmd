@@ -94,14 +94,16 @@ cases_selected |>
     high = "darkblue",    # Color for high values
     midpoint = 1.5     # Set the midpoint value for the diverging scale
   ) +
-  geom_smooth(method = "loess", span = 0.5, 
-              method.args = list(degree = 2, #linear or quadratic
-                                 family = "symmetric"), #symmetric or gaussian
-              na.rm = TRUE)+ 
+   geom_smooth(method = "loess", span = 0.5, 
+               method.args = list(degree = 2, #linear or quadratic
+                                  family = "symmetric"), #symmetric or gaussian
+               na.rm = TRUE)+ 
   labs(title = "Ideological Swing on the Court",
        x= NULL,
        y = "Average Direction")+
   theme_minimal()
+
+ggsave("charts/IDswing_line.png", plot = last_plot(), bg = "white")
 ```
 
 1 = Conservative
@@ -144,4 +146,32 @@ cases_selected |>
        x = NULL, 
        legend = "Ideological Average")+
   theme_minimal()
+
+ggsave("charts/Justice_term_line.png", scale = 2, dpi = 300, plot = last_plot(), bg = "white")
+
+```
+
+### Make animated and label by Justice
+
+```{r}
+cases_selected |>
+  group_by(year, justiceName)|>
+  summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = avg_direction, group = justiceName, color = avg_direction)) +
+  geom_line_interactive(size = 1.25)+
+  geom_point_interactive()+
+  #geom_label_repel_interactive()+
+  scale_color_gradient2(
+    low = "red",    # Color for low values
+    mid = "gray",   # Color for midpoint
+    high = "darkblue",    # Color for high values
+    midpoint = 1.5     # Set the midpoint value for the diverging scale
+  ) +
+
+  labs(title = "Ideological Swing on the Court",
+       x= NULL,
+       y = "Average Direction")+
+  theme_minimal()
+
+ggsave("charts/IDswing_line.png", plot = last_plot(), bg = "white")
 ```
