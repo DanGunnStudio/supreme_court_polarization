@@ -6,12 +6,14 @@ editor: visual
 
 # Supreme Court Polarization
 
-### Goal: To explore whether collaboration is decreasing within the Court due to partisanship. 
+### Goal: To explore whether collaboration is decreasing within the Court due to partisanship.
 
 ```{r}
 library(tidyverse)
 library(ggiraph)
 library(patchwork)
+library(ggrepel)
+library(htmlwidgets)
 ```
 
 Getting Data from the Supreme Court Database at Washington University Law
@@ -32,9 +34,13 @@ load("SCDB_2024_01_justiceCentered_Citation.Rdata")
 
 I might try this without knowledge of their party affiliations AND independently of it as well.
 
-### Q1: How do I track who votes together? 
+### Q1: How do I track who votes together?
 
 What are the groupings? Find votes where they vote the same way, and see how often they appear on the same side together.
+
+```{r}
+
+```
 
 ### Q2: Is the mean concurring vote total changing over years? 6-3
 
@@ -154,24 +160,88 @@ ggsave("charts/Justice_term_line.png", scale = 2, dpi = 300, plot = last_plot(),
 ### Make animated and label by Justice
 
 ```{r}
-cases_selected |>
-  group_by(year, justiceName)|>
-  summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
-  ggplot(aes(x = year, y = avg_direction, group = justiceName, color = avg_direction)) +
-  geom_line_interactive(size = 1.25)+
+justice_line_gg <- cases_selected |>
+    group_by(year, justiceName) |>
+  mutate(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ungroup() |>
+  group_by(justiceName) |>
+  mutate(
+    avg_direction_mean = mean(avg_direction[avg_direction != 1], na.rm = TRUE), # 
+    avg_direction = if_else(avg_direction == 1, avg_direction_mean, avg_direction)
+  ) |>
+  ungroup() |>
+  select(-avg_direction_mean)|>
+  ggplot(aes(x = year, y = avg_direction, group = justiceName, color = avg_direction, data_id = justiceName)) +
+  geom_line_interactive(aes(tooltip = justiceName), size = 1.25)+
   geom_point_interactive()+
-  #geom_label_repel_interactive()+
   scale_color_gradient2(
     low = "red",    # Color for low values
     mid = "gray",   # Color for midpoint
     high = "darkblue",    # Color for high values
     midpoint = 1.5     # Set the midpoint value for the diverging scale
   ) +
-
   labs(title = "Ideological Swing on the Court",
        x= NULL,
        y = "Average Direction")+
   theme_minimal()
 
-ggsave("charts/IDswing_line.png", plot = last_plot(), bg = "white")
+# Adding labels for Justice Names.
+justice_labels_df <- cases_selected |>
+  group_by(year, justiceName)|>
+  summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ungroup() |>
+  group_by(justiceName) |>
+  filter(year == max(year))  
+
+# Add labels only to the last point of each line
+justice_line_gg  + geom_label_repel(
+  data = justice_labels_df,
+  aes(label = justiceName),
+  #nudge_x = 0.5,  # Optional: nudge label position
+  direction = "y"
+  #hjust = 0
+) 
+
+
+ggsave("charts/IDswing_line.png", scale = 2, plot = last_plot(), bg = "white")
 ```
+
+-   There's a strange remnant on some newer justices who have scores of 1 for their intro year.
+
+-   Need to fix the tooltip
+
+-   Scale is wrong from htmlwidgets.
+
+```{r}
+justices_condensed_df <- cases_selected |>
+    group_by(year, justiceName) |>
+  mutate(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ungroup() |>
+  group_by(justiceName) |>
+  mutate(
+    avg_direction_mean = mean(avg_direction[avg_direction != 1], na.rm = TRUE), # 
+    avg_direction = if_else(avg_direction == 1, avg_direction_mean, avg_direction)
+  ) |>
+  ungroup() |>
+  select(-avg_direction_mean)
+
+write_csv(justices_condensed_df, "clean_data/justices_condensed.csv")
+```
+
+```{r}
+justice_line_girafe <- girafe(ggobj = justice_line_gg,
+    options = list(
+     opts_hover(css = ''), ## CSS code of line we're hovering over
+      opts_hover_inv(css = "opacity:0.1;"), ## CSS code of all other lines
+      opts_sizing(rescale = FALSE) ## Fixes sizes to dimensions below
+  ),
+  height_svg = 6,
+  width_svg = 9) 
+```
+
+```{r}
+saveWidget(justice_line_girafe, file = "charts/justice_line_girafe.html", selfcontained = TRUE)
+
+```
+
+Maybe this is **too big** to be useful. VERY Slow to load and react.
