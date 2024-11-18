@@ -14,6 +14,9 @@ library(ggiraph)
 library(patchwork)
 library(ggrepel)
 library(htmlwidgets)
+library(igraph)
+library(ggraph)
+
 ```
 
 Getting Data from the Supreme Court Database at Washington University Law
@@ -39,12 +42,6 @@ I might try this without knowledge of their party affiliations AND independently
 What are the groupings? Find votes where they vote the same way, and see how often they appear on the same side together.
 
 ```{r}
-
-```
-
-### Q2: Is the mean concurring vote total changing over years? 6-3
-
-```{r}
 ##making a subset
 cases_selected <- SCDB_2024_01_justiceCentered_Citation |>
   select(caseId,
@@ -63,9 +60,269 @@ cases_selected <- SCDB_2024_01_justiceCentered_Citation |>
             (majVotes / (majVotes + minVotes)) * 100 
             )
           )
+```
+
+```{r}
+#Use crossing() to create all unique pairs of justices within each case
+justice_pairs <- cases_selected  |>
+  group_by(caseId)  |>
+  nest(.key = "case_votes")  |> #special name for the temp data
+  mutate(pairs = map(case_votes, ~ 
+                       tidyr::crossing(
+                         rename_with(.x, ~ paste0(.x, "_1")), 
+                         rename_with(.x, ~ paste0(.x, "_2"))
+                       ) %>%
+                       filter(justiceName_1 < justiceName_2))) |>
+  select(-case_votes) |>
+  unnest(pairs)
+
+#Compare votes for each justice pair within each case
+justice_pairs <- justice_pairs |>
+  mutate(voted_together = vote_1 == vote_2)
+
+#Summarize how often each pair voted together across all cases
+voting_summary <- justice_pairs |>
+  group_by(justiceName_1, justiceName_2) |>
+  summarize(times_voted_together = sum(voted_together, na.rm = TRUE),
+            total_cases = n(),
+            agreement_rate = times_voted_together / total_cases) |>
+  ungroup()
+
+print(voting_summary)
+```
+
+```{r}
+#saving dataset
+write_csv(voting_summary, "clean_data/voting_summary.csv")
+```
+
+```{r}
+cases_selected |> filter(caseId == "1946-001")
+
+```
+
+```{r}
+# Wide-format voting matrix by year and case
+votes_wide <- cases_selected %>%
+  group_by(year) %>%
+  pivot_wider(
+    id_cols = c(caseId, year),
+    names_from = justiceName,
+    values_from = vote
+  ) %>%
+  ungroup()
+
+# Preview the transformed dataset
+print(head(votes_wide))
+```
+
+```{r}
+cases_1946 <- votes_wide %>%
+  filter(year == 1946) %>%
+  select(-year)  # Remove the `year` column since it's constant
+
+```
+
+```{r}
+
+
+library(dplyr)
+library(purrr)
+
+pairwise_agreement_1946 <- cases_1946 %>%
+  rowwise() %>%  # Ensure row-wise processing
+  mutate(pairwise = list({
+    # Filter out columns with all NA values
+    justice_votes <- pick(-caseId) %>%
+      select(where(~ !all(is.na(.))))
+    
+    # Skip if fewer than two justices are active
+    if (ncol(justice_votes) < 2) {
+      return(NULL)
+    }
+    
+    # Generate pairwise combinations and calculate agreement
+    combn(names(justice_votes), 2, simplify = FALSE) %>%
+      purrr::map_df(~ {
+        justice1 <- .x[1]
+        justice2 <- .x[2]
+        votes1 <- justice_votes[[justice1]]
+        votes2 <- justice_votes[[justice2]]
+        
+        # Calculate agreement only for overlapping votes
+        valid_indices <- !is.na(votes1) & !is.na(votes2)
+        agreement_rate <- if (sum(valid_indices) > 0) {
+          mean(votes1[valid_indices] == votes2[valid_indices], na.rm = TRUE)
+        } else {
+          NA
+        }
+        
+        tibble(
+          Justice1 = justice1,
+          Justice2 = justice2,
+          Agreement = agreement_rate
+        )
+      })
+  })) %>%
+  unnest(pairwise) %>%  # Combine pairwise results
+  select(caseId, Justice1, Justice2, Agreement)  # Keep only relevant columns
+
 
 
 ```
+
+```{r}
+pairwise_agreement_1946
+```
+
+```{r}
+summary_agreement_1946 <- pairwise_agreement_1946 %>%
+  group_by(Justice1, Justice2) %>%
+  summarise(
+    MeanAgreement = mean(Agreement, na.rm = TRUE),
+    CasesCompared = sum(!is.na(Agreement)),  # Count cases with overlapping votes
+    .groups = "drop"
+  )|>
+  arrange(desc(MeanAgreement))
+
+# View summary
+print(summary_agreement_1946)
+```
+
+```{r}
+summary_agreement_1946_sum <- pairwise_agreement_1946 %>%
+  group_by(Justice1, Justice2) %>%
+  summarise(
+    MeanAgreement = mean(Agreement, na.rm = TRUE),
+    CasesCompared = sum(!is.na(Agreement)),  # Count cases with overlapping votes
+    .groups = "drop"
+  )
+```
+
+```{r}
+
+# Create a list of all unique justices
+all_justices <- unique(c(summary_agreement_1946_sum$Justice1, summary_agreement_1946_sum$Justice2))
+
+# Initialize an empty matrix
+agreement_matrix <- matrix(NA, nrow = length(all_justices), ncol = length(all_justices))
+rownames(agreement_matrix) <- all_justices
+colnames(agreement_matrix) <- all_justices
+
+# Populate the matrix with MeanAgreement values
+for (i in seq_len(nrow(summary_agreement_1946_sum))) {
+  row <- summary_agreement_1946_sum$Justice1[i]
+  col <- summary_agreement_1946_sum$Justice2[i]
+  value <- summary_agreement_1946_sum$MeanAgreement[i]
+  
+  agreement_matrix[row, col] <- value
+  agreement_matrix[col, row] <- value  # Fill symmetrically
+}
+
+# View the agreement matrix
+print(agreement_matrix)
+
+library(pheatmap)
+
+# # Convert to matrix format
+# agreement_matrix <- summary_agreement_1946_sum %>%
+#   pivot_wider(names_from = Justice2, values_from = MeanAgreement) %>%
+#   column_to_rownames("Justice1") %>%
+#   as.matrix()
+
+# Create heatmap
+pheatmap(
+  agreement_matrix,
+  color = colorRampPalette(c("darkred", "gray", "darkgreen"))(50),
+  na_col = "white",  # Color for missing values
+  main = "Justice Agreement Heatmap (1946)"
+)
+
+```
+
+```{r}
+library(superheat)
+
+superheat(
+  agreement_matrix,
+  scale = TRUE,  # Standardize data
+  heat.pal = colorRampPalette(c("darkred", "darkgreen"))(100),  # Define color scheme
+  title = "Justice Agreement Heatmap (1946)",
+  left.label.text.size = 3,
+  bottom.label.text.size = 3
+)
+
+
+superheat(
+  agreement_matrix,
+  scale = TRUE,
+  heat.pal = colorRampPalette(c("darkred", "darkgreen"))(100),
+  title = "Justice Agreement Heatmap (1946)",
+  left.label.text.size = 3,
+  bottom.label.text.size = 3,
+  row.dendrogram = TRUE,  # Add clustering for rows
+  col.dendrogram = TRUE   # Add clustering for columns
+)
+```
+
+```{r}
+
+```
+
+### Making a network graph
+
+```{r}
+
+# Convert the data into an edge list with weights based on agreement rate or times voted together
+edge_list <- voting_summary %>%
+  select(justiceName_1, justiceName_2, agreement_rate)
+
+#Create the graph from the edge list
+g <- graph_from_data_frame(d = edge_list, directed = FALSE)
+
+# Step 2: Plot the network
+ggraph(g, layout = "dh") +  
+  geom_edge_link(aes(width = agreement_rate, 
+                     alpha = agreement_rate), 
+                 color = "blue") +  # Edge width and transparency by agreement rate
+  scale_edge_width(range = c(0.5, 2)) +  #Adjust edge width range for better clarity
+  scale_edge_alpha(range = c(0.2, 0.7)) +  #Set alpha range to make lower weights lighter
+  geom_node_point(size = 5, 
+                  color = "red") +  # Nodes representing justices
+  geom_node_text(aes(label = name), 
+                 repel = TRUE) +  # Justice names as node labels
+  theme_void() +  # Minimalist theme
+  labs(title = "Network of Justices Voting Together",
+       subtitle = "Edge thickness represents frequency of agreement")
+
+```
+
+This visualization isn't that helpful. What I need is a measure of aggregate agreement rate by term.
+
+```{r}
+# Combine justice names for labeling
+voting_summary <- voting_summary %>%
+  mutate(justice_pair = paste(justiceName_1, "&", justiceName_2))
+
+# Scatter plot of agreement rates for each justice pair
+ggplot(voting_summary, aes(x = justice_pair, y = agreement_rate)) +
+  geom_point(aes(size = times_voted_together, color = agreement_rate), alpha = 0.7) +
+  scale_color_gradient2(low = "red", mid = "gray", high = "blue", midpoint = 0.5) +
+  labs(
+    title = "Agreement Rates Between Justice Pairs",
+    x = "Justice Pair",
+    y = "Agreement Rate",
+    color = "Agreement Rate",
+    size = "Times Voted Together"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+```
+
+Interesting plot... but it needs to be by year.
+
+### Q2: Is the mean concurring vote total changing over years? 6-3
 
 ```{r}
 cases_selected |> 
@@ -157,7 +414,7 @@ ggsave("charts/Justice_term_line.png", scale = 2, dpi = 300, plot = last_plot(),
 
 ```
 
-### Make animated and label by Justice
+### Make individual lines by Justice and label
 
 ```{r}
 justice_line_gg <- cases_selected |>
@@ -212,6 +469,8 @@ ggsave("charts/IDswing_line.png", scale = 2, plot = last_plot(), bg = "white")
 
 -   Scale is wrong from htmlwidgets.
 
+### Saving the dataset
+
 ```{r}
 justices_condensed_df <- cases_selected |>
     group_by(year, justiceName) |>
@@ -227,6 +486,8 @@ justices_condensed_df <- cases_selected |>
 
 write_csv(justices_condensed_df, "clean_data/justices_condensed.csv")
 ```
+
+### Making the interactive graphic
 
 ```{r}
 justice_line_girafe <- girafe(ggobj = justice_line_gg,
