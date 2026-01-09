@@ -1,0 +1,51 @@
+---
+description: R coding style and best practices for this project
+globs: ["**/*.R", "**/*.Rmd", "**/*.qmd"]
+---
+
+# R Coding Style Guide
+
+## General Style
+- Use tidyverse conventions and functions
+- Prefer native pipe `|>` over magrittr `%>%`
+- Use snake_case for variable and function names
+- Maximum line length: 80 characters when practical
+
+## Function Documentation
+Use roxygen2-style comments for all exported functions:
+```r
+#' Brief description of function
+#' @param param_name Description of parameter
+#' @return Description of return value
+function_name <- function(param_name) {
+  # implementation
+}
+```
+
+## Data Manipulation
+- Use dplyr verbs: `select()`, `filter()`, `mutate()`, `summarize()`, `group_by()`
+- Use tidyr for reshaping: `pivot_wider()`, `pivot_longer()`, `nest()`, `unnest()`
+- Prefer `if_else()` over `ifelse()` for type stability
+
+## Visualization
+- Use ggplot2 for all static visualizations
+- Apply `theme_court()` for consistent styling
+- Use `ggiraph` for interactive visualizations
+- Save with `ggsave()` or custom `save_chart()` function
+
+## File Organization
+- Source data loading functions from `data_science_agent.R`
+- Source visualization functions from `data_viz_agent.R`
+- Output CSVs to `clean_data/`
+- Output charts to `charts/`
+
+## Package Loading
+Load packages at the top of scripts. Core packages for this project:
+```r
+library(tidyverse)
+library(ggiraph)
+library(patchwork)
+library(ggrepel)
+library(igraph)
+library(ggraph)
+```

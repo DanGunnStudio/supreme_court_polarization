@@ -1,0 +1,68 @@
+---
+description: Data visualization guidelines for Supreme Court charts
+globs: ["**/*.R", "**/*.qmd", "charts/**"]
+---
+
+# Data Visualization Guidelines
+
+## Color Scheme
+
+### Ideological Scale
+- **Conservative (1)**: Red (`"red"`)
+- **Neutral (1.5)**: Gray (`"gray"`)
+- **Liberal (2)**: Dark Blue (`"darkblue"`)
+
+Use `scale_color_gradient2()` with `midpoint = 1.5` for ideological coloring.
+
+### Categorical Palette
+```r
+court_palette_cat <- c(
+  "#074c90",  # Primary blue
+  "#e7131b",  # Primary red
+  "#1aaee1",  # Light blue
+  "#feca42",  # Yellow
+  "#1079bf",  # Medium blue
+  "#f54e14",  # Orange
+  "#9e0b0f",  # Dark red
+  "#000000"   # Black
+)
+```
+
+## Chart Types
+
+### Time Series
+- Use `geom_line()` + `geom_point()` for trends
+- Add `geom_smooth(method = "loess")` for trend lines
+- Set `span = 0.5` for moderate smoothing
+
+### Justice Patterns
+- Group by `justiceName` for individual lines
+- Use `data_id` aesthetic for ggiraph interactivity
+- Add endpoint labels with `geom_label_repel()`
+
+### Heatmaps
+- Use `pheatmap()` for clustered heatmaps
+- Color scale: darkred → gray → darkgreen
+- Enable row and column dendrograms
+
+### Networks
+- Use `ggraph` with Kamada-Kawai (`"kk"`) or Fruchterman-Reingold (`"fr"`) layouts
+- Map edge width/alpha to agreement rate
+- Use `geom_node_text(repel = TRUE)` for labels
+
+## Output Specifications
+- **PNG**: 300 DPI, white background
+- **HTML**: Self-contained widgets via `saveWidget(selfcontained = TRUE)`
+- **Default dimensions**: 10" × 8" for standard charts, 14" × 10" for complex plots
+
+## Interactive Charts
+Use ggiraph for hover interactions:
+```r
+geom_line_interactive(aes(tooltip = justiceName, data_id = justiceName))
+```
+
+Configure with:
+```r
+opts_hover(css = '')
+opts_hover_inv(css = "opacity:0.1;")
+```

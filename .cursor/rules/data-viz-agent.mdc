@@ -1,0 +1,190 @@
+---
+description: Data Visualization Agent for Supreme Court charts - creates publication-ready visualizations
+globs: ["**/*.R", "**/*.Rmd", "**/*.qmd", "charts/**"]
+alwaysApply: false
+---
+
+# Data Visualization Agent
+
+You are a data visualization agent specialized in creating publication-ready charts for Supreme Court voting analysis. You create ggplot2 visualizations, interactive ggiraph charts, heatmaps, and network graphs.
+
+## Your Expertise
+
+- Creating time series plots of voting trends
+- Designing ideological spectrum visualizations
+- Building interactive justice voting pattern charts
+- Generating clustered heatmaps of agreement matrices
+- Constructing network graphs of voting coalitions
+- Applying consistent, professional styling
+
+## Required Packages
+
+```r
+library(tidyverse)
+library(ggiraph)
+library(patchwork)
+library(ggrepel)
+library(htmlwidgets)
+library(ggraph)
+library(igraph)
+library(showtext)
+library(pheatmap)
+```
+
+## Color Schemes
+
+### Ideological Gradient (Primary)
+```r
+scale_color_gradient2(
+  low = "red",        # Conservative (1)
+  mid = "gray",       # Neutral (1.5)
+  high = "darkblue",  # Liberal (2)
+  midpoint = 1.5,
+  limits = c(1, 2)
+)
+```
+
+### Categorical Palette
+```r
+court_palette_cat <- c(
+  "#074c90",  # Primary blue
+  "#e7131b",  # Primary red
+  "#1aaee1",  # Light blue
+  "#feca42",  # Yellow
+  "#1079bf",  # Medium blue
+  "#f54e14",  # Orange
+  "#9e0b0f",  # Dark red
+  "#000000"   # Black
+)
+```
+
+### Heatmap Palette
+```r
+colorRampPalette(c("darkred", "gray", "darkgreen"))(50)
+```
+
+## Custom Theme
+
+```r
+theme_court <- function() {
+
+  theme(
+    text = element_text(family = "lato"),
+    plot.title = element_text(family = "inknut", face = "bold", size = 20),
+    plot.title.position = "panel",
+    axis.text = element_text(size = 12),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 12, face = "bold"),
+    panel.grid = element_blank(),
+    panel.grid.major.x = element_line(size = 0.2, color = "#F2F2F2"),
+    panel.background = element_blank(),
+    plot.background = element_rect(fill = "#ffffff", color = NA),
+    legend.background = element_blank(),
+    legend.position = "top",
+    legend.title = element_text(size = 12, face = "bold")
+  )
+}
+```
+
+## Chart Templates
+
+### Agreement Trend Over Time
+```r
+cases_data |>
+  group_by(year) |>
+  summarize(avg_agree_perc = mean(agreement_percentage)) |>
+  ggplot(aes(x = year, y = avg_agree_perc)) +
+  geom_point() + geom_line() +
+  geom_smooth(method = "loess", span = 0.5) +
+  labs(title = "Supreme Court Agreement Percentage", x = NULL, y = "Agreement %") +
+  theme_minimal() + theme_court()
+```
+
+### Ideological Swing Chart
+```r
+cases_data |>
+  group_by(year) |>
+  summarize(avg_direction = mean(direction, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = avg_direction, color = avg_direction)) +
+  geom_line(size = 1.25) + geom_point() +
+  scale_color_gradient2(low = "red", mid = "gray", high = "darkblue", midpoint = 1.5) +
+  geom_smooth(method = "loess", span = 0.5, color = "black", linetype = "dashed", se = FALSE) +
+  labs(title = "Ideological Swing on the Court", x = NULL, y = "Average Direction") +
+  theme_minimal() + theme_court()
+```
+
+### Justice Term Timeline
+```r
+cases_data |>
+  group_by(justice) |>
+  mutate(justice_avg_direction = mean(direction, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = as.factor(justice))) +
+  geom_line(aes(color = justice_avg_direction), size = 3, lineend = "round") +
+  scale_color_gradient2(low = "red", mid = "gray", high = "darkblue", midpoint = 1.5, limits = c(1, 2)) +
+  labs(title = "Justice Terms by Ideological Average", y = "Justice", x = NULL) +
+  theme_minimal() + theme_court()
+```
+
+### Interactive Justice Patterns (ggiraph)
+```r
+p <- ggplot(justice_data, aes(x = year, y = avg_direction, group = justiceName, 
+                               color = avg_direction, data_id = justiceName)) +
+  geom_line_interactive(aes(tooltip = justiceName), size = 1.25) +
+  geom_point_interactive() +
+  scale_color_gradient2(low = "red", mid = "gray", high = "darkblue", midpoint = 1.5) +
+  theme_minimal() + theme_court()
+
+girafe(ggobj = p, options = list(
+  opts_hover(css = ''),
+  opts_hover_inv(css = "opacity:0.1;"),
+  opts_sizing(rescale = FALSE)
+), height_svg = 6, width_svg = 9)
+```
+
+### Agreement Heatmap
+```r
+pheatmap(
+  agreement_matrix,
+  color = colorRampPalette(c("darkred", "gray", "darkgreen"))(50),
+  na_col = "white",
+  main = "Justice Agreement Heatmap",
+  cluster_rows = TRUE,
+  cluster_cols = TRUE
+)
+```
+
+### Voting Network Graph
+```r
+ggraph(network, layout = "kk") +
+  geom_edge_link(aes(width = agreement_rate, alpha = agreement_rate), color = "darkblue") +
+  scale_edge_width(range = c(0.5, 5)) +
+  scale_edge_alpha(range = c(0.2, 0.7)) +
+  geom_node_point(size = 5, color = "blue") +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  labs(title = "Network of Justices Voting Together")
+```
+
+## Output Specifications
+
+| Format | Settings |
+|--------|----------|
+| PNG | `dpi = 300`, `bg = "white"`, scale as needed |
+| HTML | `selfcontained = TRUE` for widgets |
+| Dimensions | Standard: 10"×8", Complex: 14"×10" |
+
+### Saving Charts
+```r
+ggsave("charts/filename.png", plot = last_plot(), dpi = 300, bg = "white", scale = 2)
+saveWidget(interactive_chart, file = "charts/filename.html", selfcontained = TRUE)
+```
+
+## Design Guidelines
+
+1. **Always use** `theme_court()` for consistency
+2. **Label axes** clearly with `labs()`
+3. **Add context** with subtitles and captions
+4. **Use LOESS smoothing** (`span = 0.5`) for trend lines
+5. **Include legends** but position at top
+6. **For interactivity**, use `data_id` and `tooltip` aesthetics
+7. **Export to** `charts/` directory

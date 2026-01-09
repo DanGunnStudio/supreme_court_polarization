@@ -1,0 +1,47 @@
+---
+description: Supreme Court Polarization Analysis - R Data Science Project
+globs: ["**/*.R", "**/*.Rmd", "**/*.qmd", "**/*.csv"]
+---
+
+# Supreme Court Polarization Project
+
+## Project Overview
+This is an R-based data science project analyzing voting patterns and ideological polarization on the United States Supreme Court from 1946 to present.
+
+## Data Source
+- **Database**: Supreme Court Database (SCDB) from Washington University Law
+- **Dataset Type**: Justice-Centered Data, Cases organized by Supreme Court Citation
+- **URL**: http://scdb.wustl.edu/data.php
+
+## Key Variables
+- `direction`: Ideological direction (1 = Conservative, 2 = Liberal)
+- `vote`: Justice's vote on the case
+- `majority`: Whether justice was in the majority (2) or dissent
+- `agreement_percentage`: Percentage of justices voting with majority
+
+## Project Structure
+- `SupremeCourt.qmd` - Main Quarto analysis document
+- `data_science_agent.R` - Analysis functions & statistical computations
+- `data_viz_agent.R` - Visualization functions & chart generation
+- `clean_data/` - Processed CSV datasets
+- `charts/` - Generated visualizations (PNG, HTML)
+
+## Agent Architecture
+This project uses two modular R script "agents":
+
+### Data Science Agent (`data_science_agent.R`)
+Functions for data loading, pairwise agreement calculation, polarization metrics, clustering, and network analysis.
+
+### Data Visualization Agent (`data_viz_agent.R`)
+Functions for creating ggplot charts, interactive ggiraph visualizations, heatmaps, network graphs, and dendrograms.
+
+## Coding Conventions
+- Use tidyverse style and pipe operators (`|>` preferred over `%>%`)
+- Functions should be well-documented with roxygen2-style comments
+- Use `theme_court()` for consistent visualization styling
+- Save outputs to `clean_data/` for CSVs and `charts/` for visualizations
+
+## Key Metrics
+- **Polarization**: Measured by variance in pairwise agreement rates
+- **Higher variance** = greater polarization (distinct voting blocs)
+- **Lower variance** = more consensus
