@@ -16,6 +16,7 @@ library(ggrepel)
 library(htmlwidgets)
 library(igraph)
 library(ggraph)
+library(showtext)
 
 ```
 
@@ -243,15 +244,8 @@ pheatmap(
 ```{r}
 library(superheat)
 
-superheat(
-  agreement_matrix,
-  scale = TRUE,  # Standardize data
-  heat.pal = colorRampPalette(c("darkred", "darkgreen"))(100),  # Define color scheme
-  title = "Justice Agreement Heatmap (1946)",
-  left.label.text.size = 3,
-  bottom.label.text.size = 3
-)
 
+png("charts/justice_agreement_heatmap.png", width = 1600, height = 1200)
 
 superheat(
   agreement_matrix,
@@ -263,10 +257,127 @@ superheat(
   row.dendrogram = TRUE,  # Add clustering for rows
   col.dendrogram = TRUE   # Add clustering for columns
 )
+
+dev.off()
+
+```
+
+### Cluster analysis
+
+```{r}
+#make sure that the matrix is symmetric
+agreement_matrix[is.na(agreement_matrix)] <- 0  
+agreement_matrix <- (agreement_matrix + t(agreement_matrix)) / 2  
+
+
 ```
 
 ```{r}
+#calculate the dissimilariyt matrix
+distance_matrix <- as.dist(1 - agreement_matrix)
 
+```
+
+```{r}
+justice_clusters <- hclust(distance_matrix, method = "complete")  #using complete linkage
+
+plot(
+  justice_clusters,
+  labels = rownames(agreement_matrix),
+  main = "Hierarchical Clustering of Justices (1946)",
+  ylab = "Dissimilarity"
+)
+```
+
+### **Polarization Metrics**
+
+Q Quantify polarization on the court by measuring the variance in pairwise agreement rates for each year:
+
+-   Higher variance = greater polarization.
+
+-   Lower variance = more consensus.
+
+Compute yearly pairwise agreement
+
+```{r}
+
+yearly_pairwise_agreement <- votes_wide %>%
+  rowwise() %>%  # Process each row (case) separately
+  mutate(pairwise = list({
+    # Select only justice vote columns
+    justice_votes <- pick(-year, -caseId) %>% select(where(~ !all(is.na(.))))
+    
+    # Skip cases with fewer than 2 justices
+    if (ncol(justice_votes) < 2) return(tibble())
+    
+    # Create unique justice pairs
+    expand.grid(Justice1 = names(justice_votes), Justice2 = names(justice_votes), stringsAsFactors = FALSE) %>%
+      filter(Justice1 < Justice2) %>%  # Keep unique pairs
+      rowwise() %>%
+      mutate(
+        Agreement = {
+          # Extract votes for the pair
+          votes1 <- justice_votes[[Justice1]]
+          votes2 <- justice_votes[[Justice2]]
+          valid_indices <- !is.na(votes1) & !is.na(votes2)
+          if (sum(valid_indices) > 0) {
+            mean(votes1[valid_indices] == votes2[valid_indices], na.rm = TRUE)
+          } else {
+            NA
+          }
+        }
+      ) %>%
+      ungroup()
+  })) %>%
+  unnest(pairwise) %>%  # Flatten the pairwise results
+  group_by(caseId, year, Justice1, Justice2) %>%
+  summarise(Agreement = mean(Agreement, na.rm = TRUE), .groups = "drop")  # Ensure one row per pair per case
+
+
+
+```
+
+Variance by year
+
+```{r}
+# Compute variance of agreement rates by year
+polarization_by_year <- yearly_pairwise_agreement %>%
+  group_by(year) %>%
+  summarise(
+    AgreementVariance = var(Agreement, na.rm = TRUE),  # Variance in agreement rates
+    MeanAgreement = mean(Agreement, na.rm = TRUE),    # Optional: Mean agreement for context
+    PairwiseCount = n(),                              # Number of justice pairs considered
+    .groups = "drop"
+  )
+
+# View the results
+print(polarization_by_year, n = 10)
+```
+
+```{r}
+ggplot(polarization_by_year, aes(x = year, y = AgreementVariance)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth(method = "loess")+
+  labs(
+    title = "Polarization on the Supreme Court Over Time",
+    x = "Year",
+    y = "Variance in Agreement Rates"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(polarization_by_year, aes(x = year)) +
+  geom_line(aes(y = AgreementVariance, color = "Variance")) +
+  geom_line(aes(y = MeanAgreement, color = "Mean Agreement")) +
+  labs(
+    title = "Polarization Trends on the Supreme Court",
+    x = "Year",
+    y = "Value",
+    color = "Metric"
+  ) +
+  theme_minimal()
 ```
 
 ### Making a network graph
@@ -281,16 +392,17 @@ edge_list <- voting_summary %>%
 g <- graph_from_data_frame(d = edge_list, directed = FALSE)
 
 # Step 2: Plot the network
-ggraph(g, layout = "dh") +  
+ggraph(g, layout = "kk") +  
   geom_edge_link(aes(width = agreement_rate, 
                      alpha = agreement_rate), 
-                 color = "blue") +  # Edge width and transparency by agreement rate
-  scale_edge_width(range = c(0.5, 2)) +  #Adjust edge width range for better clarity
+                 color = "darkblue") +  # Edge width and transparency by agreement rate
+  scale_edge_width(range = c(0.5, 5)) +  #Adjust edge width range for better clarity
   scale_edge_alpha(range = c(0.2, 0.7)) +  #Set alpha range to make lower weights lighter
   geom_node_point(size = 5, 
-                  color = "red") +  # Nodes representing justices
+                  color = "blue") +  # Nodes representing justices
   geom_node_text(aes(label = name), 
-                 repel = TRUE) +  # Justice names as node labels
+                 repel = TRUE, 
+                 color = "gray")+  # Justice names as node labels
   theme_void() +  # Minimalist theme
   labs(title = "Network of Justices Voting Together",
        subtitle = "Edge thickness represents frequency of agreement")
@@ -300,23 +412,6 @@ ggraph(g, layout = "dh") +
 This visualization isn't that helpful. What I need is a measure of aggregate agreement rate by term.
 
 ```{r}
-# Combine justice names for labeling
-voting_summary <- voting_summary %>%
-  mutate(justice_pair = paste(justiceName_1, "&", justiceName_2))
-
-# Scatter plot of agreement rates for each justice pair
-ggplot(voting_summary, aes(x = justice_pair, y = agreement_rate)) +
-  geom_point(aes(size = times_voted_together, color = agreement_rate), alpha = 0.7) +
-  scale_color_gradient2(low = "red", mid = "gray", high = "blue", midpoint = 0.5) +
-  labs(
-    title = "Agreement Rates Between Justice Pairs",
-    x = "Justice Pair",
-    y = "Agreement Rate",
-    color = "Agreement Rate",
-    size = "Times Voted Together"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
 
 ```
 
@@ -337,6 +432,9 @@ cases_selected |>
               na.rm = TRUE)+  
   labs(title = "Supreme Court Agreement Percentage")+
   theme_minimal()
+
+ggsave("charts/Agreement_line.png", scale = 2, dpi = 300, plot = last_plot(), bg = "white")
+
 
 ```
 
@@ -376,6 +474,89 @@ ggsave("charts/IDswing_line.png", plot = last_plot(), bg = "white")
 Interesting result. This would be the total votes in a year that are considered to be conservative vs. liberal. This is about the political content of the vote, not the partisanship of the justices or the willingness of them to form different coalitions.
 
 ```{r}
+## GOOGLE FONT options -------------------------------
+showtext_auto()
+font_add_google("Lato", "lato")
+font_add_google("Montserrat", "mont") #use thin
+font_add_google("Inknut Antiqua", "inknut") #use bold and display
+
+font_families()
+
+
+## GGPLOT Theme -------------------------
+theme_court <- function(){
+  theme(
+   # aspect.ratio = 1.5,
+      #Text
+      text = element_text(family = "lato"),
+      #Title Text
+      plot.subtitle = element_text(family = "inknut", 
+                                  face ="bold",
+                                  size=20),
+      #plot.subtitle.position = "panel",
+      plot.title = element_text(family = "inknut", 
+                                  face ="bold",
+                                  size=20),
+      plot.title.position = "panel",
+      #Axis Text
+      axis.text = element_text(size = 12),
+      axis.text.x = element_text(size = 12), #Axis Text
+      axis.title.y = element_text(size = 12, 
+                                  face = "bold"),
+      #Facet Text
+      strip.text= element_text(size = 12,
+                               face = "bold"),
+      #Grid elements
+      panel.grid = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),  # Hide minor grid lines
+      panel.grid.major.x = element_line(size = .2,
+                                        color = "#F2F2F2"),
+      #Background elements
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      plot.background = element_rect(fill = "#ffffff",
+                                     color= NA),
+      # Axis elements
+     # axis.line = element_line(color = "black", 
+     #                          size = 0.5),
+      # Legend elements
+      legend.background = element_blank(),
+      legend.position = "top",
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 10)
+      
+      )
+}
+
+## PALETTE -----------
+court_palette_full = c( "#043a64",
+                "#074c90",
+                "#1079bf",
+                "#1aaee1",
+                "#9ec84a",
+                "#9e0b0f",
+                "#e7131b",
+                "#f54e14",
+                "#f59413",
+                "#feca42",
+                "#cac098",
+                "#eeecea",
+                "#000000")
+
+court_palette_cat = c("#074c90",
+                   "#e7131b",
+                "#1aaee1",
+                "#feca42",
+                "#1079bf",
+                "#f54e14",
+                "#9e0b0f",
+                "#000000")
+
+
+```
+
+```{r}
 
 endpoints <- cases_selected %>%
   group_by(justiceName) %>%
@@ -387,12 +568,14 @@ cases_selected |>
   mutate(justice_avg_direction = mean(direction, na.rm = TRUE))|>
   ggplot(aes(x=year, y = as.factor(justice)))+ 
   geom_line(aes(color = justice_avg_direction),
-                size = 2,
+                size = 3,
             lineend = "round")+
-  geom_text(
+  geom_label(
     data = endpoints,
     aes(label = year),
-    vjust = -0.5  # Adjust to move label slightly above the point
+    fill = "white", color = "black",
+    fontface = "bold", label.padding = unit(0.3, "lines"),
+    vjust = 0
   ) +
   scale_y_discrete(
     breaks = cases_selected$justice,
@@ -402,19 +585,26 @@ cases_selected |>
     low = "red",    # Color for low values
     mid = "gray",   # Color for midpoint
     high = "darkblue",    # Color for high values
-    midpoint = 1.5     # Set the midpoint value for the diverging scale
+    midpoint = 1.5,     # Set the midpoint value for the diverging scale
+    limits = c(1, 2)      # Set the limits of the scale from 1 to 2
   ) +
-  labs(title = "Ideological Shift and Justice Terms", 
+  labs(title = "Ideological Average and Justice Terms", 
+       caption = "Scale ranges from 1- Conservative to 2 - Liberal",
        y = "Justice", 
        x = NULL, 
-       legend = "Ideological Average")+
-  theme_minimal()
+       color = "Ideological Average")+
+  theme_minimal()+
+  theme_court()
 
-ggsave("charts/Justice_term_line.png", scale = 2, dpi = 300, plot = last_plot(), bg = "white")
+ggsave("charts/Justice_term_line.png", scale = 1, dpi = 300, plot = last_plot(), bg = "white")
 
 ```
 
 ### Make individual lines by Justice and label
+
+```{r}
+
+```
 
 ```{r}
 justice_line_gg <- cases_selected |>
